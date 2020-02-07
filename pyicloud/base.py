@@ -326,10 +326,12 @@ class PyiCloudService(object):
     def photos(self):
         if not hasattr(self, '_photos'):
             service_root = self.webservices['ckdatabasews']['url']
+            upload_url = self.webservices['uploadimagews']['url']
             self._photos = PhotosService(
                 service_root,
                 self.session,
-                self.params
+                self.params,
+                upload_url,
             )
         return self._photos
 

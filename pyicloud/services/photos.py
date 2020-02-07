@@ -1,3 +1,4 @@
+import os
 import sys
 import json
 import logging
@@ -132,14 +133,14 @@ class PhotosService(object):
         },
     }
 
-    def __init__(self, service_root, session, params):
+    def __init__(self, service_root, session, params, upload_url):
         self.session = session
         self.params = dict(params)
         self._service_root = service_root
         self._service_endpoint = \
             ('%s/database/1/com.apple.photos.cloud/production/private'
              % self._service_root)
-
+        self._upload_url = upload_url
         self._albums = None
 
         self.params.update({
@@ -223,6 +224,51 @@ class PhotosService(object):
     @property
     def all(self):
         return self.albums['All Photos']
+
+    def upload_file(self, path):
+        ''' Upload a photo from path, returns a recordName'''
+
+        filename = os.path.basename(path)
+        url = '{}/upload'.format(self._upload_url)
+
+        with open(path, 'rb') as file_obj:
+            request = self.session.post(url, data=file_obj.read(), params={
+                'filename': filename,
+                'dsid': self.params['dsid'],
+            })
+
+        return [x['recordName'] for x in request.json()['records'] if x['recordType'] == 'CPLAsset'][0]
+
+    def delete_many(self, record_names):
+        '''Supply a series of CPLAsset record names'''
+        url = '{}/records/modify'.format(self._service_endpoint)
+        json_data = {
+            'operations': [{
+                'operationType': 'update',
+                'record': {
+                    'recordType': 'CPLAsset',
+                    'recordName': record_name,
+                    'recordChangeTag': '3t',
+                    'fields': {
+                        'isDeleted': {
+                            'value': 1,
+                        },
+                    },
+                },
+            } for record_name in record_names],
+            'zoneID': {
+                'zoneName': 'PrimarySync',
+                'zoneType': 'REGULAR_CUSTOM_ZONE'
+            },
+            'atomic': True,
+         }
+
+        self.session.post(url, json=json_data, params=self.params)
+        return True
+
+    def delete(self, record_name):
+        return self.delete_many([record_name])
+
 
 
 class PhotoAlbum(object):
@@ -503,6 +549,9 @@ class PhotoAsset(object):
             stream=True,
             **kwargs
         )
+
+    def delete(self):
+        return self._service.delete(self._asset_record['recordName'])
 
     def __repr__(self):
         return "<%s: id=%s>" % (
